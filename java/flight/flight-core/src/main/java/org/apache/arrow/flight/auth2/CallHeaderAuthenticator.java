@@ -72,6 +72,13 @@ public interface CallHeaderAuthenticator {
   boolean enableCachedCredentials();
 
   /**
+   * Adds a bearer token to the outgoing headers if a bearer token in not present.
+   * @param outgoingHeaders The outgoing header.
+   * @param bearerToken The bearer token to add.
+   */
+  void addBearerTokenToOutgoingHeaderIfNotPresent(CallHeaders outgoingHeaders, String bearerToken);
+
+  /**
    * An auth handler that does nothing.
    */
   CallHeaderAuthenticator NO_OP = new CallHeaderAuthenticator() {
@@ -93,6 +100,11 @@ public interface CallHeaderAuthenticator {
     @Override
     public boolean enableCachedCredentials() {
       return false;
+    }
+
+    @Override
+    public void addBearerTokenToOutgoingHeaderIfNotPresent(CallHeaders outgoingHeaders, String bearerToken) {
+
     }
   };
 }

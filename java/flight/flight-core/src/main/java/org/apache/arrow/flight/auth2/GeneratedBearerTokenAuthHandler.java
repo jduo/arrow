@@ -22,6 +22,9 @@ import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.arrow.flight.CallHeaders;
+import org.apache.arrow.flight.RequestContext;
+
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
@@ -54,5 +57,30 @@ public class GeneratedBearerTokenAuthHandler extends BearerTokenAuthHandler {
         });
     bearerToIdentityCache.put(bearerToken, handshakeResult.getPeerIdentity());
     return bearerToken;
+  }
+
+  @Override
+  public void addBearerTokenToOutgoingHeaderIfNotPresent(CallHeaders outgoingHeaders, String bearerToken) {
+    if (bearerToken != null &&
+          null == AuthUtilities.getValueFromAuthHeader(outgoingHeaders, Auth2Constants.BEARER_PREFIX)) {
+      outgoingHeaders.insert(Auth2Constants.AUTHORIZATION_HEADER, Auth2Constants.BEARER_PREFIX + bearerToken);
+    }
+  }
+
+  /**
+   * Gets the bearer token from the incoming headers.
+   * @param incomingHeaders The incoming header.
+   * @param context The request context.
+   * @return The bearer token from the incoming headers.
+   */
+  String getBearerToken(CallHeaders incomingHeaders, RequestContext context) {
+    final String bearerTokenFromHeaders =
+            AuthUtilities.getValueFromAuthHeader(incomingHeaders, Auth2Constants.BEARER_PREFIX);
+    if (bearerTokenFromHeaders != null) {
+      final CallHeaderAuthenticator.AuthResult result = authenticate(incomingHeaders);
+      context.put(Auth2Constants.PEER_IDENTITY_KEY, result.getPeerIdentity());
+      return result.getBearerToken().get();
+    }
+    return null;
   }
 }

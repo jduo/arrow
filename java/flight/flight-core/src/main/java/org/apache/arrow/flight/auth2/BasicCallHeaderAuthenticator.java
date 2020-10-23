@@ -90,6 +90,14 @@ public class BasicCallHeaderAuthenticator implements CallHeaderAuthenticator {
     return true;
   }
 
+  @Override
+  public void addBearerTokenToOutgoingHeaderIfNotPresent(CallHeaders outgoingHeaders, String bearerToken) {
+    if (bearerToken != null &&
+            null == AuthUtilities.getValueFromAuthHeader(outgoingHeaders, Auth2Constants.BEARER_PREFIX)) {
+      outgoingHeaders.insert(Auth2Constants.AUTHORIZATION_HEADER, Auth2Constants.BEARER_PREFIX + bearerToken);
+    }
+  }
+
   /**
    * Interface that this handler delegates to for determining if credentials are valid.
    */
