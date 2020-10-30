@@ -167,6 +167,7 @@ public class FlightServer implements AutoCloseable {
     private FlightProducer producer;
     private final Map<String, Object> builderOptions;
     private ServerAuthHandler authHandler = ServerAuthHandler.NO_OP;
+    private CloseHandler closeHandler = CloseHandler.NO_OP;
     private CallHeaderAuthenticator headerAuthenticator = CallHeaderAuthenticator.NO_OP;
     private ExecutorService executor = null;
     private int maxInboundMessageSize = MAX_GRPC_MESSAGE_SIZE;
@@ -259,6 +260,11 @@ public class FlightServer implements AutoCloseable {
             new ThreadFactoryBuilder().setNameFormat("flight-server-default-executor-%d").build());
         grpcExecutor = exec;
       }
+
+      if (closeHandler != CloseHandler.NO_OP) {
+        producer = new DelegatingCloseProducer(producer, closeHandler);
+      }
+
       final FlightBindingService flightService = new FlightBindingService(allocator, producer, authHandler, exec);
       builder
           .executor(exec)
@@ -348,6 +354,14 @@ public class FlightServer implements AutoCloseable {
      */
     public Builder headerAuthenticator(CallHeaderAuthenticator headerAuthenticator) {
       this.headerAuthenticator = headerAuthenticator;
+      return this;
+    }
+
+    /**
+     * Set the session close handler.
+     */
+    public Builder closeHandler(CloseHandler closeHandler) {
+      this.closeHandler = closeHandler;
       return this;
     }
 
