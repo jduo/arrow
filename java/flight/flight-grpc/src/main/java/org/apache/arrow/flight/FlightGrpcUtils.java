@@ -19,17 +19,67 @@ package org.apache.arrow.flight;
 
 import java.util.Collections;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.arrow.flight.auth.ServerAuthHandler;
 import org.apache.arrow.memory.BufferAllocator;
 
 import io.grpc.BindableService;
+import io.grpc.CallOptions;
+import io.grpc.ClientCall;
 import io.grpc.ManagedChannel;
+import io.grpc.MethodDescriptor;
 
 /**
  * Exposes Flight GRPC service & client.
  */
 public class FlightGrpcUtils {
+  /**
+   * Proxy class for ManagedChannel that makes closure a no-op.
+   */
+  private static class ProxyManagedChannel extends ManagedChannel {
+    private final ManagedChannel channel;
+
+    ProxyManagedChannel(ManagedChannel channel) {
+      this.channel = channel;
+    }
+
+    @Override
+    public ManagedChannel shutdown() {
+      return this;
+    }
+
+    @Override
+    public boolean isShutdown() {
+      return false;
+    }
+
+    @Override
+    public boolean isTerminated() {
+      return false;
+    }
+
+    @Override
+    public ManagedChannel shutdownNow() {
+      return this;
+    }
+
+    @Override
+    public boolean awaitTermination(long l, TimeUnit timeUnit) throws InterruptedException {
+      return false;
+    }
+
+    @Override
+    public <RequestT, ResponseT> ClientCall<RequestT, ResponseT> newCall(
+        MethodDescriptor<RequestT, ResponseT> methodDescriptor, CallOptions callOptions) {
+      return this.channel.newCall(methodDescriptor, callOptions);
+    }
+
+    @Override
+    public String authority() {
+      return this.channel.authority();
+    }
+  }
 
   private FlightGrpcUtils() {}
 
@@ -49,10 +99,10 @@ public class FlightGrpcUtils {
   /**
    * Creates a Flight client.
    * @param incomingAllocator  Memory allocator
-   * @param channel provides a connection to a gRPC server
+   * @param channel provides a connection to a gRPC server. Will not be closed on closure of the returned FlightClient.
    * @return FlightClient
    */
   public static FlightClient createFlightClient(BufferAllocator incomingAllocator, ManagedChannel channel) {
-    return new FlightClient(incomingAllocator, channel, Collections.emptyList());
+    return new FlightClient(incomingAllocator, new ProxyManagedChannel(channel), Collections.emptyList());
   }
 }
