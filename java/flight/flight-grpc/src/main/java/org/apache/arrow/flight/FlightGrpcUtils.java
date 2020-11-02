@@ -60,12 +60,16 @@ public class FlightGrpcUtils {
 
     @Override
     public boolean isShutdown() {
+      if (this.channel.isShutdown()) {
+        // If the underlying channel is shut down, ensure we're updated to match.
+        shutdown();
+      }
       return isShutdown;
     }
 
     @Override
     public boolean isTerminated() {
-      return isShutdown;
+      return this.isShutdown();
     }
 
     @Override
@@ -75,13 +79,15 @@ public class FlightGrpcUtils {
 
     @Override
     public boolean awaitTermination(long l, TimeUnit timeUnit) {
-      return true;
+      // Don't actually await termination, since it'll be a no-op, so simply return whether or not
+      // the channel has been shut down already.
+      return this.isShutdown();
     }
 
     @Override
     public <RequestT, ResponseT> ClientCall<RequestT, ResponseT> newCall(
         MethodDescriptor<RequestT, ResponseT> methodDescriptor, CallOptions callOptions) {
-      if (isShutdown) {
+      if (this.isShutdown()) {
         throw new IllegalStateException("Channel has been shut down.");
       }
 
@@ -95,7 +101,7 @@ public class FlightGrpcUtils {
 
     @Override
     public ConnectivityState getState(boolean requestConnection) {
-      if (isShutdown) {
+      if (this.isShutdown()) {
         return ConnectivityState.SHUTDOWN;
       }
 

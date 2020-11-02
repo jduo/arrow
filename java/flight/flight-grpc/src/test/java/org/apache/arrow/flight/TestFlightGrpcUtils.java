@@ -26,7 +26,9 @@ import java.util.concurrent.Executors;
 import org.apache.arrow.flight.auth.ServerAuthHandler;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
+import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import com.google.protobuf.Empty;
@@ -43,6 +45,34 @@ import io.grpc.stub.StreamObserver;
  * Unit test which adds 2 services to same server end point.
  */
 public class TestFlightGrpcUtils {
+  private Server server;
+  private BufferAllocator allocator;
+  private String serverName;
+
+  @Before
+  public void setup() throws IOException {
+    //Defines flight service
+    allocator = new RootAllocator(Integer.MAX_VALUE);
+    final NoOpFlightProducer producer = new NoOpFlightProducer();
+    final ServerAuthHandler authHandler = ServerAuthHandler.NO_OP;
+    final ExecutorService exec = Executors.newCachedThreadPool();
+    final BindableService flightBindingService = FlightGrpcUtils.createFlightService(allocator, producer,
+        authHandler, exec);
+
+    //initializes server with 2 services - FlightBindingService & TestService
+    serverName = InProcessServerBuilder.generateName();
+    server = InProcessServerBuilder.forName(serverName)
+        .directExecutor()
+        .addService(flightBindingService)
+        .addService(new TestServiceAdapter())
+        .build();
+    server.start();
+  }
+
+  @After
+  public void cleanup() {
+    server.shutdownNow();
+  }
 
   /**
    * This test checks if multiple gRPC services can be added to the same
@@ -51,24 +81,6 @@ public class TestFlightGrpcUtils {
    */
   @Test
   public void testMultipleGrpcServices() throws IOException {
-
-    //Defines flight service
-    final BufferAllocator allocator = new RootAllocator(Integer.MAX_VALUE);
-    final NoOpFlightProducer producer = new NoOpFlightProducer();
-    final ServerAuthHandler authHandler = ServerAuthHandler.NO_OP;
-    final ExecutorService exec = Executors.newCachedThreadPool();
-    final BindableService flightBindingService = FlightGrpcUtils.createFlightService(allocator, producer,
-            authHandler, exec);
-
-    //initializes server with 2 services - FlightBindingService & TestService
-    final String serverName = InProcessServerBuilder.generateName();
-    final Server server = InProcessServerBuilder.forName(serverName)
-            .directExecutor()
-            .addService(flightBindingService)
-            .addService(new TestServiceAdapter())
-            .build();
-    server.start();
-
     //Initializes channel so that multiple clients can communicate with server
     final ManagedChannel managedChannel = InProcessChannelBuilder.forName(serverName)
             .directExecutor()
@@ -88,24 +100,6 @@ public class TestFlightGrpcUtils {
 
   @Test
   public void testShutdown() throws IOException, InterruptedException {
-
-    //Defines flight service
-    final BufferAllocator allocator = new RootAllocator(Integer.MAX_VALUE);
-    final NoOpFlightProducer producer = new NoOpFlightProducer();
-    final ServerAuthHandler authHandler = ServerAuthHandler.NO_OP;
-    final ExecutorService exec = Executors.newCachedThreadPool();
-    final BindableService flightBindingService = FlightGrpcUtils.createFlightService(allocator, producer,
-        authHandler, exec);
-
-    //initializes server with 2 services - FlightBindingService & TestService
-    final String serverName = InProcessServerBuilder.generateName();
-    final Server server = InProcessServerBuilder.forName(serverName)
-        .directExecutor()
-        .addService(flightBindingService)
-        .addService(new TestServiceAdapter())
-        .build();
-    server.start();
-
     //Initializes channel so that multiple clients can communicate with server
     final ManagedChannel managedChannel = InProcessChannelBuilder.forName(serverName)
         .directExecutor()
@@ -120,6 +114,61 @@ public class TestFlightGrpcUtils {
     Assert.assertFalse(managedChannel.isShutdown());
     Assert.assertFalse(managedChannel.isTerminated());
     Assert.assertEquals(ConnectivityState.IDLE, managedChannel.getState(false));
+    managedChannel.shutdownNow();
+  }
+
+  @Test
+  public void testProxyChannel() throws IOException, InterruptedException {
+    //Initializes channel so that multiple clients can communicate with server
+    final ManagedChannel managedChannel = InProcessChannelBuilder.forName(serverName)
+        .directExecutor()
+        .build();
+
+    final FlightGrpcUtils.ProxyManagedChannel proxyChannel = new FlightGrpcUtils.ProxyManagedChannel(managedChannel);
+    Assert.assertFalse(proxyChannel.isShutdown());
+    Assert.assertFalse(proxyChannel.isTerminated());
+    proxyChannel.shutdown();
+    Assert.assertTrue(proxyChannel.isShutdown());
+    Assert.assertTrue(proxyChannel.isTerminated());
+    Assert.assertEquals(ConnectivityState.SHUTDOWN, proxyChannel.getState(false));
+    try {
+      proxyChannel.newCall(null, null);
+      Assert.fail();
+    } catch (IllegalStateException e) {
+      // This is expected, since the proxy channel is shut down.
+    }
+
+    Assert.assertFalse(managedChannel.isShutdown());
+    Assert.assertFalse(managedChannel.isTerminated());
+    Assert.assertEquals(ConnectivityState.IDLE, managedChannel.getState(false));
+
+    managedChannel.shutdownNow();
+  }
+
+  @Test
+  public void testProxyChannelWithClosedChannel() throws IOException, InterruptedException {
+    //Initializes channel so that multiple clients can communicate with server
+    final ManagedChannel managedChannel = InProcessChannelBuilder.forName(serverName)
+        .directExecutor()
+        .build();
+
+    final FlightGrpcUtils.ProxyManagedChannel proxyChannel = new FlightGrpcUtils.ProxyManagedChannel(managedChannel);
+    Assert.assertFalse(proxyChannel.isShutdown());
+    Assert.assertFalse(proxyChannel.isTerminated());
+    managedChannel.shutdownNow();
+    Assert.assertTrue(proxyChannel.isShutdown());
+    Assert.assertTrue(proxyChannel.isTerminated());
+    Assert.assertEquals(ConnectivityState.SHUTDOWN, proxyChannel.getState(false));
+    try {
+      proxyChannel.newCall(null, null);
+      Assert.fail();
+    } catch (IllegalStateException e) {
+      // This is expected, since the proxy channel is shut down.
+    }
+
+    Assert.assertTrue(managedChannel.isShutdown());
+    Assert.assertTrue(managedChannel.isTerminated());
+    Assert.assertEquals(ConnectivityState.SHUTDOWN, managedChannel.getState(false));
   }
 
   /**
