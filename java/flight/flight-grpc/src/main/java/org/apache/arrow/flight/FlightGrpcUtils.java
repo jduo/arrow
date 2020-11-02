@@ -17,9 +17,7 @@
 
 package org.apache.arrow.flight;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -43,18 +41,15 @@ public class FlightGrpcUtils {
   static class ProxyManagedChannel extends ManagedChannel {
     private final ManagedChannel channel;
     private boolean isShutdown;
-    private final List<Runnable> shutdownCallbacks;
 
     ProxyManagedChannel(ManagedChannel channel) {
       this.channel = channel;
       this.isShutdown = channel.isShutdown();
-      this.shutdownCallbacks = new ArrayList<>();
     }
 
     @Override
     public ManagedChannel shutdown() {
       isShutdown = true;
-      shutdownCallbacks.forEach(c -> c.run());
       return this;
     }
 
@@ -110,12 +105,7 @@ public class FlightGrpcUtils {
 
     @Override
     public void notifyWhenStateChanged(ConnectivityState source, Runnable callback) {
-      if (source == ConnectivityState.SHUTDOWN) {
-        // Register the shutdown callback locally to ensure we can fire it when the proxy is shut down.
-        shutdownCallbacks.add(callback);
-      } else {
-        this.channel.notifyWhenStateChanged(source, callback);
-      }
+      this.channel.notifyWhenStateChanged(source, callback);
     }
 
     @Override
