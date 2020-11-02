@@ -32,6 +32,7 @@ import org.junit.Test;
 import com.google.protobuf.Empty;
 
 import io.grpc.BindableService;
+import io.grpc.ConnectivityState;
 import io.grpc.ManagedChannel;
 import io.grpc.Server;
 import io.grpc.inprocess.InProcessChannelBuilder;
@@ -83,6 +84,42 @@ public class TestFlightGrpcUtils {
     //Define Test client as a blocking stub and call test method which correctly returns an empty protobuf object
     final TestServiceGrpc.TestServiceBlockingStub blockingStub = TestServiceGrpc.newBlockingStub(managedChannel);
     Assert.assertEquals(Empty.newBuilder().build(), blockingStub.test(Empty.newBuilder().build()));
+  }
+
+  @Test
+  public void testShutdown() throws IOException, InterruptedException {
+
+    //Defines flight service
+    final BufferAllocator allocator = new RootAllocator(Integer.MAX_VALUE);
+    final NoOpFlightProducer producer = new NoOpFlightProducer();
+    final ServerAuthHandler authHandler = ServerAuthHandler.NO_OP;
+    final ExecutorService exec = Executors.newCachedThreadPool();
+    final BindableService flightBindingService = FlightGrpcUtils.createFlightService(allocator, producer,
+        authHandler, exec);
+
+    //initializes server with 2 services - FlightBindingService & TestService
+    final String serverName = InProcessServerBuilder.generateName();
+    final Server server = InProcessServerBuilder.forName(serverName)
+        .directExecutor()
+        .addService(flightBindingService)
+        .addService(new TestServiceAdapter())
+        .build();
+    server.start();
+
+    //Initializes channel so that multiple clients can communicate with server
+    final ManagedChannel managedChannel = InProcessChannelBuilder.forName(serverName)
+        .directExecutor()
+        .build();
+
+    //Defines flight client and calls service method. Since we use a NoOpFlightProducer we expect the service
+    //to throw a RunTimeException
+    final FlightClient flightClient = FlightGrpcUtils.createFlightClient(allocator, managedChannel);
+
+    // Should be a no-op.
+    flightClient.close();
+    Assert.assertFalse(managedChannel.isShutdown());
+    Assert.assertFalse(managedChannel.isTerminated());
+    Assert.assertEquals(ConnectivityState.IDLE, managedChannel.getState(false));
   }
 
   /**

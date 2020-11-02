@@ -17,7 +17,9 @@
 
 package org.apache.arrow.flight;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -27,6 +29,7 @@ import org.apache.arrow.memory.BufferAllocator;
 import io.grpc.BindableService;
 import io.grpc.CallOptions;
 import io.grpc.ClientCall;
+import io.grpc.ConnectivityState;
 import io.grpc.ManagedChannel;
 import io.grpc.MethodDescriptor;
 
@@ -37,47 +40,86 @@ public class FlightGrpcUtils {
   /**
    * Proxy class for ManagedChannel that makes closure a no-op.
    */
-  private static class ProxyManagedChannel extends ManagedChannel {
+  static class ProxyManagedChannel extends ManagedChannel {
     private final ManagedChannel channel;
+    private boolean isShutdown;
+    private final List<Runnable> shutdownCallbacks;
 
     ProxyManagedChannel(ManagedChannel channel) {
       this.channel = channel;
+      this.isShutdown = channel.isShutdown();
+      this.shutdownCallbacks = new ArrayList<>();
     }
 
     @Override
     public ManagedChannel shutdown() {
+      isShutdown = true;
+      shutdownCallbacks.forEach(c -> c.run());
       return this;
     }
 
     @Override
     public boolean isShutdown() {
-      return false;
+      return isShutdown;
     }
 
     @Override
     public boolean isTerminated() {
-      return false;
+      return isShutdown;
     }
 
     @Override
     public ManagedChannel shutdownNow() {
-      return this;
+      return shutdown();
     }
 
     @Override
-    public boolean awaitTermination(long l, TimeUnit timeUnit) throws InterruptedException {
-      return false;
+    public boolean awaitTermination(long l, TimeUnit timeUnit) {
+      return true;
     }
 
     @Override
     public <RequestT, ResponseT> ClientCall<RequestT, ResponseT> newCall(
         MethodDescriptor<RequestT, ResponseT> methodDescriptor, CallOptions callOptions) {
+      if (isShutdown) {
+        throw new IllegalStateException("Channel has been shut down.");
+      }
+
       return this.channel.newCall(methodDescriptor, callOptions);
     }
 
     @Override
     public String authority() {
       return this.channel.authority();
+    }
+
+    @Override
+    public ConnectivityState getState(boolean requestConnection) {
+      if (isShutdown) {
+        return ConnectivityState.SHUTDOWN;
+      }
+
+      return this.channel.getState(requestConnection);
+    }
+
+    @Override
+    public void notifyWhenStateChanged(ConnectivityState source, Runnable callback) {
+      if (source == ConnectivityState.SHUTDOWN) {
+        // Register the shutdown callback locally to ensure we can fire it when the proxy is shut down.
+        shutdownCallbacks.add(callback);
+      } else {
+        this.channel.notifyWhenStateChanged(source, callback);
+      }
+    }
+
+    @Override
+    public void resetConnectBackoff() {
+      this.channel.resetConnectBackoff();
+    }
+
+    @Override
+    public void enterIdle() {
+      this.channel.enterIdle();
     }
   }
 
