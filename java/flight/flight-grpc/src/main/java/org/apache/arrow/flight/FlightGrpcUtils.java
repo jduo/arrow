@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.arrow.flight.auth.ServerAuthHandler;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.util.VisibleForTesting;
 
 import io.grpc.BindableService;
 import io.grpc.CallOptions;
@@ -38,6 +39,7 @@ public class FlightGrpcUtils {
   /**
    * Proxy class for ManagedChannel that makes closure a no-op.
    */
+  @VisibleForTesting
   static class ProxyManagedChannel extends ManagedChannel {
     private final ManagedChannel channel;
     private boolean isShutdown;
