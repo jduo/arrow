@@ -105,6 +105,10 @@ public class FlightGrpcUtils {
 
     @Override
     public void notifyWhenStateChanged(ConnectivityState source, Runnable callback) {
+      // The proxy has no insight into the underlying channel state changes, so we'll have to leak the abstraction
+      // a bit here and simply pass to the underlying channel, even though it will never transition to shutdown via
+      // the proxy. This should be fine, since it's mainly targeted at the FlightClient and there's no getter for
+      // the channel.
       this.channel.notifyWhenStateChanged(source, callback);
     }
 
